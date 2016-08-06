@@ -7,7 +7,8 @@ from ctypes import *
 # host to listen on
 host = "172.16.10.224"
 
-# our IP header
+# IP Class structure
+#####################################################################
 class IP(Structure):
     _fields_ = [
         ("ihl",                 c_ubyte, 4),
@@ -41,6 +42,24 @@ class IP(Structure):
             self.protocol = str(self.protocol_num)
 
 
+# ICMP Class structure
+#####################################################################
+class ICMP(Structure):
+    _fields_ = [
+        ("type",           c_ubyte),
+        ("code",           c_ubyte),
+        ("checksum",       c_ushort),
+        ("unused",         c_ushort),
+        ("next_hop_mtu",   c_ushort)
+        ]
+
+    def __new__(self, socket_buffer):
+        return self.from_buffer_copy(socket_buffer)
+
+    def __init__(self, socket_buffer):
+        pass
+
+
 # create a raw socket and bind it to the public interface
 if os.name == "nt":
     socket_protocol = socket.IPPROTO_IP
@@ -67,6 +86,18 @@ try:
 
         # print out the protocol that was detected and the hosts
         print "Protocol: %s %s -> %s" % (ip_header.protocol, ip_header.src_address, ip_header.dst_address)
+
+        # if it is ICMP, we want to decode that
+        if ip_header.protocol == "ICMP":
+            # calculate where out ICMP packet starts
+            offset = ip_header.ihl * 4
+            buf = raw_buffer[offset:offset + sizeof(ICMP)]
+
+            # create our ICMP structure
+            icmp_header = ICMP(buf)
+
+            print "ICMP -> Type: %d Code: %d" % (icmp_header.type, icmp_header.code)
+
 
 # handle CTRL-C
 except KeyboardInterrupt:
