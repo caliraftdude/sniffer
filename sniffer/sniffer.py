@@ -1,11 +1,21 @@
 ﻿import socket
 import os
 import struct
+import threading
+import time
 
+from netaddr import IPNetwork,IPAddress
 from ctypes import *
+
 
 # host to listen on
 host = "172.16.10.224"
+
+# subnet to target
+subnet = "172.16.10.0/24"
+
+# magic string we will use to check ICMP responses for
+magic_message = "PYTHONRULES!"
 
 # IP Class structure
 #####################################################################
@@ -59,6 +69,17 @@ class ICMP(Structure):
     def __init__(self, socket_buffer):
         pass
 
+# Functions
+#####################################################################
+def udp_sender(subnet, magic_message):
+    time.sleep(5)
+    sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    for ip in IPNetwork(subnet):
+        try:
+            sender.sendto(magic_message, ("%s" % ip,65212))
+        except:
+            pass
 
 # create a raw socket and bind it to the public interface
 if os.name == "nt":
@@ -76,6 +97,10 @@ sniffer.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
 if os.name == "nt":
     sniffer.ioctl(socket.SIO_RCVALL, socket.RCVALL_ON)
 
+# start sending packets
+t = threading.Thread(target=udp_sender, args=(subnet, magic_message))
+t.start()
+
 try:
     while True:
         # read in a packet
@@ -85,7 +110,7 @@ try:
         ip_header = IP(raw_buffer[0:20])
 
         # print out the protocol that was detected and the hosts
-        print "Protocol: %s %s -> %s" % (ip_header.protocol, ip_header.src_address, ip_header.dst_address)
+        #print "Protocol: %s %s -> %s" % (ip_header.protocol, ip_header.src_address, ip_header.dst_address)
 
         # if it is ICMP, we want to decode that
         if ip_header.protocol == "ICMP":
@@ -96,7 +121,18 @@ try:
             # create our ICMP structure
             icmp_header = ICMP(buf)
 
-            print "ICMP -> Type: %d Code: %d" % (icmp_header.type, icmp_header.code)
+            #print "ICMP -> Type: %d Code: %d" % (icmp_header.type, icmp_header.code)
+            # now check for the TYPE 3 and CODE
+            if icmp_header.code == 3 and icmp_header.type == 3:
+
+                # Make sure host is in our target subnet
+                if IPAddress(ip_header.src_address) in IPNetwork(subnet):
+
+                    # make sure it has our magic message
+                    if raw_buffer[len(raw_buffer)-len(magic_message):] == magic_message:
+
+                        print "Host Up: %s" % ip_header.src_address
+
 
 
 # handle CTRL-C
